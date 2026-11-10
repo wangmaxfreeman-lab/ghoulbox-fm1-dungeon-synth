@@ -1,0 +1,28 @@
+--- a/firmware/src/project.c
++++ b/firmware/src/project.c
+@@ -900,7 +900,13 @@
+ #if FELUCCA_FLASH
+     persist_t p;
+     uint32_t f = irq_save();
+-    flash_ok = FL_FAR(fl_jedec_ram)() == 0x856014u;       /* the expected 1 MiB part, else stay RAM-only */
++    /* 1 MiB SPI NOR parts seen on the FM-1: the Puya P25Q80 (0x856014) and, on units sold
++     * since autumn 2026, the UC25HQ80 (0xB36014). Both take the same generic commands;
++     * an unknown part leaves the firmware RAM-only, so saves vanish at power-off (#25). */
++    {
++        uint32_t jid = FL_FAR(fl_jedec_ram)();
++        flash_ok = (jid == 0x856014u || jid == 0xB36014u);
++    }
+     irq_restore(f);
+     if (!flash_ok)
+         return;
+--- a/firmware/hal/fm1_flash.h
++++ b/firmware/hal/fm1_flash.h
+@@ -143,7 +143,7 @@
+ 
+ /* ---- entry points: IRQs OFF, args/buffers in RAM ---- */
+ 
+-static RAMFN uint32_t fl_jedec_ram(void)                 /* expect 0x856014 */
++static RAMFN uint32_t fl_jedec_ram(void)                 /* 0x856014 Puya P25Q80, 0xB36014 UC25HQ80 */
+ {
+     fl_saved_t s; uint32_t id;
+     if (fl_enter(&s)) return 0;
