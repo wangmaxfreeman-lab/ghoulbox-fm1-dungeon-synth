@@ -1,0 +1,59 @@
+name: build-ghoulbox-chippatch
+
+# Builds a GHOULBOX package that accepts the newer FM-1 flash chip (UC25HQ80, 0xB36014)
+# on a vanilla ubuntu-22.04 x86-64 runner: the JieLi toolchain runs natively there,
+# so no Docker is needed.
+#
+# Use: fork jasonpersinger/ghoulbox-fm1-dungeon-synth, add this file and
+# patches/0001-accept-uc25hq80-flash.patch to your fork, then Actions > Run workflow.
+# The .fwsc package appears under the run's "Artifacts".
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Apply the flash-chip patch
+        run: |
+          git apply --verbose patches/0001-accept-uc25hq80-flash.patch \
+            || patch -p1 < patches/0001-accept-uc25hq80-flash.patch
+          grep -n "0xB36014" firmware/src/project.c
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Python deps for the generators
+        run: pip install --upgrade Pillow fonttools
+
+      - name: JieLi toolchain (clang 4.0.1 for pi32v2)
+        run: |
+          ./tools/get_toolchain.sh
+          ls -l "$HOME/.jieli/toolchain/pi32v2/bin/clang"
+
+      - name: JieLi AC79 SDK (three files are needed by the package maker)
+        run: |
+          git clone --depth 1 --branch AC79NN_SDK_V1.2.1_2023-12-13 \
+            https://gitee.com/Jieli-Tech/fw-AC79_AIoT_SDK.git "$HOME/fw-AC79_AIoT_SDK"
+          ls -l "$HOME/fw-AC79_AIoT_SDK/cpu/wl82/tools/uboot.boot"
+
+      - name: Build
+        run: |
+          export AC79_SDK="$HOME/fw-AC79_AIoT_SDK"
+          ./build.sh --release 2.4.1-chip
+          ls -l build/*.fwsc
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: ghoulbox-fwsc-chippatch
+          path: |
+            build/*.fwsc
+            build/release-*/**
+          if-no-files-found: error
